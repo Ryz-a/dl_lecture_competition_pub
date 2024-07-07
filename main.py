@@ -10,7 +10,7 @@ from termcolor import cprint
 from tqdm import tqdm
 
 from src.datasets import ThingsMEGDataset
-from src.models import BasicConvClassifier
+from src.models import BasicConvClassifier, Pretrain_Classifier,UsePretrainConvClassifier
 from src.utils import set_seed
 
 
@@ -22,7 +22,7 @@ def run(args: DictConfig):
     if args.use_wandb:
         wandb.init(mode="online", dir=logdir, project="MEG-classification")
 
-    # -----------------
+    # ------------------
     #    Dataloader
     # ------------------
     loader_args = {"batch_size": args.batch_size, "num_workers": args.num_workers}
@@ -47,6 +47,13 @@ def run(args: DictConfig):
     #     Optimizer
     # ------------------
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.pretrained:
+        pretrained_model = Pretrain_Classifier(train_set.num_classes, train_set.seq_len, train_set.num_channels).to(args.device)
+        pretrained_model.load_state_dict(torch.load(args.pretrain_path, map_location=args.device))
+        encoder = pretrained_model.encoder_custom
+        model = UsePretrainConvClassifier(encoder,train_set.num_classes).to(args.device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
+        print('mode_Use_pretrain',args.pretrain_path)
 
     # ------------------
     #   Start training

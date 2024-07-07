@@ -9,5 +9,8 @@ use_wandb: False
 
 data_dir: data
 
+pretrained: False
+pretrain_path: outputs/pretrain/pretrain.pt
+
 # Evaluation
 model_path: 
