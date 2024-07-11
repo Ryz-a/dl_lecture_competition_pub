@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torchvision import models
 
-'''
+
 class Encoder(nn.Module):
     def __init__(self, in_channels: int, hid_dim: int = 128):
         super().__init__()
@@ -49,7 +49,8 @@ class BasicConvClassifier(nn.Module):
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         X = self.encoder(X)
         return self.classifier(X)
-'''
+
+"""
 class BasicConvClassifier(nn.Module):
     def __init__(
         self,
@@ -72,16 +73,16 @@ class BasicConvClassifier(nn.Module):
         )
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
-        """_summary_
+        '''_summary_
         Args:
             X ( b, c, t ): _description_
         Returns:
             X ( b, num_classes ): _description_
-        """
+        '''
         X = self.blocks(X)
 
         return self.head(X)
-
+"""
 
 class ConvBlock(nn.Module):
     def __init__(
@@ -89,7 +90,7 @@ class ConvBlock(nn.Module):
         in_dim,
         out_dim,
         kernel_size: int = 3,
-        p_drop: float = 0.1,
+        p_drop: float = 0.2,
     ) -> None:
         super().__init__()
         
@@ -182,17 +183,66 @@ class Pretrain_Classifier(nn.Module):
         x_out = self.classifier(x_combined)
         return x_out
     
+    
+class Decoder(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int = 3):
+        super().__init__()
+        
+        self.fc = nn.Linear(in_channels * 281, 256 * 7 * 7)
+        self.blocks = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+
+            nn.ConvTranspose2d(32, 16, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+
+            nn.ConvTranspose2d(16, out_channels, kernel_size=4, stride=2, padding=1),
+            nn.Tanh()
+            )
+        
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        batch_size = X.size(0)
+        X = X.view(batch_size, -1)  # Flatten the input
+        X = self.fc(X)
+        X = X.view(batch_size, 256, 7, 7)  # Reshape to start of upsampling
+        X = self.blocks(X)
+        return X
+    
+class Pretrain_model(nn.Module):
+    def __init__(self, in_channels: int, hid_dim: int = 128, out_channels: int = 3,
+                 ):
+        super().__init__()
+        self.encoder = Encoder(in_channels, hid_dim)
+        self.decoder = Decoder(hid_dim, out_channels)
+
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        encoded_output = self.encoder(X)
+        decoded_output = self.decoder(encoded_output)
+        return decoded_output
+    
+
 class UsePretrainConvClassifier(nn.Module):
     def __init__(
         self,
-        encoder: BasicConvClassifier,
+        pretrain: Pretrain_model,
         num_classes: int,
     ) -> None:
         super().__init__()
 
-        self.blocks = encoder
+        self.encoder = pretrain.encoder
+        self.fc = pretrain.decoder.fc
 
-        self.head = nn.Linear(num_classes, num_classes)
+        self.head = nn.Linear(256 * 7 * 7, num_classes)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """_summary_
@@ -201,6 +251,9 @@ class UsePretrainConvClassifier(nn.Module):
         Returns:
             X ( b, num_classes ): _description_
         """
-        X = self.blocks(X)
-
+        X = self.encoder(X)
+        batch_size = X.size(0)
+        X = X.view(batch_size, -1)
+        X = self.fc(X)
+        
         return self.head(X)
